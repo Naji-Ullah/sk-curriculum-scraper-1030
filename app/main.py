@@ -87,7 +87,7 @@ async def get_results():
         with open(f, encoding="utf-8") as fp:
             data = json.load(fp)
         subject_name = list(data.keys())[0] if data else f.stem
-        level_count = sum(1 for k in data.get(subject_name, {}) if k.startswith("Level"))
+        level_names = [k for k in data.get(subject_name, {}) if k.startswith("Level")]
         outcome_count = 0
         for key, val in data.get(subject_name, {}).items():
             if isinstance(val, dict) and "Outcomes" in val:
@@ -96,7 +96,7 @@ async def get_results():
         files.append({
             "filename": f.name,
             "subject": subject_name,
-            "levels": level_count,
+            "level": level_names[0] if level_names else "N/A",
             "outcomes": outcome_count,
             "size": f.stat().st_size,
         })
@@ -202,7 +202,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 <thead>
                     <tr>
                         <th>Subject</th>
-                        <th>Levels</th>
+                        <th>Level</th>
                         <th>Outcomes</th>
                         <th>Size</th>
                         <th>Actions</th>
@@ -317,7 +317,7 @@ HTML_PAGE = """<!DOCTYPE html>
                     totalOutcomes += file.outcomes;
                     html += '<tr>';
                     html += '<td>' + file.subject + '</td>';
-                    html += '<td><span class="badge badge-level">' + file.levels + ' levels</span></td>';
+                    html += '<td><span class="badge badge-level">' + file.level + '</span></td>';
                     html += '<td><span class="badge badge-outcome">' + file.outcomes + ' outcomes</span></td>';
                     html += '<td>' + formatSize(file.size) + '</td>';
                     html += '<td><a href="/api/results/' + encodeURIComponent(file.filename) + '" target="_blank">Download</a> | ';

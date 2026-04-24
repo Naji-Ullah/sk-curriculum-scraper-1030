@@ -211,13 +211,29 @@ def organize_by_level(
     return levels
 
 
+def extract_subject_base_name(curriculum_name: str) -> str:
+    """Extract the base subject name without level numbers.
+
+    e.g. 'Arts Education 10, 20, 30' -> 'Arts Education'
+         'Biology 30' -> 'Biology'
+         'Instrumental Jazz 10' -> 'Instrumental Jazz'
+    """
+    name = re.sub(r"\s*\(.*?\)\s*$", "", curriculum_name)
+    name = re.sub(r"\s+\d{1,2}(?:\s*,\s*\d{1,2})*\s*$", "", name)
+    return name.strip()
+
+
 async def scrape_curriculum(
     client: httpx.AsyncClient,
     curriculum_id: int,
     curriculum_name: str,
     progress_callback=None,
-) -> dict[str, Any]:
-    """Scrape a single curriculum's outcomes and indicators."""
+) -> list[dict[str, Any]]:
+    """Scrape a single curriculum's outcomes and indicators.
+
+    Returns a list of per-level result dicts, each structured as:
+    {subject_name: {"Pdf_url": ..., "Level XX": {"Outcomes": [...]}}}
+    """
     pdf_url = await get_pdf_url(client, curriculum_id)
 
     outcomes_url = f"{BASE_URL}/CurriculumOutcomeContent?id={curriculum_id}"
@@ -227,13 +243,13 @@ async def scrape_curriculum(
         outcomes_html = await fetch_page(client, outcomes_url)
     except Exception as e:
         logger.error(f"Failed to fetch outcomes for {curriculum_name}: {e}")
-        return {curriculum_name: {"Pdf_url": pdf_url, "error": str(e)}}
+        return [{curriculum_name: {"Pdf_url": pdf_url, "error": str(e)}}]
 
     outcome_list = parse_outcomes_page(outcomes_html, curriculum_id)
 
     if not outcome_list:
         logger.warning(f"No outcomes found for {curriculum_name}")
-        return {curriculum_name: {"Pdf_url": pdf_url, "note": "No outcomes found on the web page"}}
+        return [{curriculum_name: {"Pdf_url": pdf_url, "note": "No outcomes found on the web page"}}]
 
     detailed_outcomes = []
     total = len(outcome_list)
@@ -274,9 +290,9 @@ async def scrape_curriculum(
         await asyncio.sleep(0.3)
 
     levels = organize_by_level(detailed_outcomes, curriculum_name)
+    base_name = extract_subject_base_name(curriculum_name)
 
-    result: dict[str, Any] = {curriculum_name: {"Pdf_url": pdf_url}}
-
+    per_level_results = []
     for level_label, outcomes in levels.items():
         level_outcomes = []
         for oc in outcomes:
@@ -289,16 +305,27 @@ async def scrape_curriculum(
                 outcome_entry["error"] = oc["error"]
             level_outcomes.append(outcome_entry)
 
-        result[curriculum_name][level_label] = {"Outcomes": level_outcomes}
+        level_num = level_label.replace("Level ", "") if level_label.startswith("Level ") else ""
+        if level_num:
+            file_subject_name = f"{base_name} {level_num}"
+        else:
+            file_subject_name = curriculum_name
 
-    return result
+        result: dict[str, Any] = {
+            file_subject_name: {
+                "Pdf_url": pdf_url,
+                level_label: {"Outcomes": level_outcomes},
+            }
+        }
+        per_level_results.append(result)
+
+    return per_level_results
 
 
 async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
-    """Scrape all Level 10/20/30 curricula."""
+    """Scrape all Level 10/20/30 curricula, producing one JSON file per level."""
     OUTPUT_DIR.mkdir(exist_ok=True)
     results = []
-    skipped = []
 
     active_curricula = [
         c for c in CURRICULA
@@ -321,16 +348,17 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
                 )
 
             try:
-                result = await scrape_curriculum(client, cid, name, progress_callback)
-                results.append(result)
+                per_level_results = await scrape_curriculum(client, cid, name, progress_callback)
 
-                filename = re.sub(r"[^\w\s-]", "", name).strip()
-                filename = re.sub(r"\s+", " ", filename)
-                output_path = OUTPUT_DIR / f"{filename}.json"
-                with open(output_path, "w", encoding="utf-8") as f:
-                    json.dump(result, f, indent=4, ensure_ascii=False)
-
-                logger.info(f"Saved: {output_path}")
+                for result in per_level_results:
+                    results.append(result)
+                    subject_name = list(result.keys())[0]
+                    filename = re.sub(r"[^\w\s-]", "", subject_name).strip()
+                    filename = re.sub(r"\s+", " ", filename)
+                    output_path = OUTPUT_DIR / f"{filename}.json"
+                    with open(output_path, "w", encoding="utf-8") as f:
+                        json.dump(result, f, indent=4, ensure_ascii=False)
+                    logger.info(f"Saved: {output_path}")
 
             except Exception as e:
                 logger.error(f"Failed to scrape {name}: {e}")
