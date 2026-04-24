@@ -241,15 +241,20 @@ HTML_PAGE = """<!DOCTYPE html>
                 const resp = await fetch('/api/scrape', { method: 'POST' });
                 const data = await resp.json();
                 if (data.status === 'already_running') {
-                    alert('Scraping is already in progress!');
+                    startPolling();
                     return;
                 }
-                pollInterval = setInterval(pollProgress, 2000);
+                startPolling();
             } catch (e) {
                 alert('Failed to start scraping: ' + e.message);
                 btn.disabled = false;
                 btn.textContent = 'Start Scraping';
             }
+        }
+
+        function startPolling() {
+            if (pollInterval) clearInterval(pollInterval);
+            pollInterval = setInterval(pollProgress, 1500);
         }
 
         async function pollProgress() {
@@ -259,19 +264,33 @@ HTML_PAGE = """<!DOCTYPE html>
 
                 const pct = data.total > 0 ? Math.round((data.progress / data.total) * 100) : 0;
                 document.getElementById('progressFill').style.width = pct + '%';
-                document.getElementById('progressText').textContent = pct + '% - ' + (data.current || '');
+                document.getElementById('progressText').textContent =
+                    data.is_running ? (pct + '% (' + data.progress + '/' + data.total + ') - ' + (data.current || 'Working...'))
+                    : data.completed ? '100% - Complete!'
+                    : '0%';
+
+                if (data.is_running) {
+                    document.getElementById('progressSection').style.display = 'block';
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('startBtn').textContent = 'Scraping...';
+                }
 
                 if (data.errors && data.errors.length > 0) {
                     const el = document.getElementById('errorList');
                     el.innerHTML = data.errors.map(e => '<div class="error-item">' + e + '</div>').join('');
                 }
 
-                if (!data.is_running && data.completed) {
+                refreshResults();
+
+                if (!data.is_running && (data.completed || data.progress > 0)) {
                     clearInterval(pollInterval);
+                    pollInterval = null;
                     document.getElementById('startBtn').disabled = false;
                     document.getElementById('startBtn').textContent = 'Start Scraping';
-                    document.getElementById('progressFill').style.width = '100%';
-                    document.getElementById('progressText').textContent = '100% - Complete!';
+                    if (data.completed) {
+                        document.getElementById('progressFill').style.width = '100%';
+                        document.getElementById('progressText').textContent = '100% - Complete!';
+                    }
                     refreshResults();
                 }
             } catch (e) {
@@ -286,13 +305,13 @@ HTML_PAGE = """<!DOCTYPE html>
                 const tbody = document.getElementById('resultsBody');
 
                 if (!data.files || data.files.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:40px;">No results yet.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:40px;">No results yet. Click "Start Scraping" to begin.</td></tr>';
+                    document.getElementById('stats').style.display = 'none';
                     return;
                 }
 
                 let totalOutcomes = 0;
                 let html = '';
-                let lastCategory = '';
 
                 for (const file of data.files) {
                     totalOutcomes += file.outcomes;
@@ -343,7 +362,25 @@ HTML_PAGE = """<!DOCTYPE html>
             if (e.target === this) closeModal();
         });
 
-        refreshResults();
+        // On page load: check if scraping is already running, load existing results
+        async function init() {
+            refreshResults();
+            try {
+                const resp = await fetch('/api/progress');
+                const data = await resp.json();
+                if (data.is_running) {
+                    document.getElementById('progressSection').style.display = 'block';
+                    document.getElementById('startBtn').disabled = true;
+                    document.getElementById('startBtn').textContent = 'Scraping...';
+                    startPolling();
+                } else if (data.completed) {
+                    document.getElementById('progressSection').style.display = 'block';
+                    document.getElementById('progressFill').style.width = '100%';
+                    document.getElementById('progressText').textContent = '100% - Complete!';
+                }
+            } catch(e) { console.error('Init error:', e); }
+        }
+        init();
     </script>
 </body>
 </html>
