@@ -54,40 +54,95 @@ async def get_pdf_url(client: httpx.AsyncClient, curriculum_id: int) -> str:
     return f"{BASE_URL}/CurriculumFile?id={curriculum_id}"
 
 
+def _make_full_url(href: str) -> str:
+    """Ensure a href is a full URL."""
+    if href and not href.startswith("http"):
+        return f"{BASE_URL}/{href}"
+    return href
+
+
+def _parse_sub_list_elements(container, group_name: str) -> list[dict[str, Any]]:
+    """Parse outcome-content-homepage__sub-list__element divs."""
+    result = []
+    elements = container.find_all("div", class_="outcome-content-homepage__sub-list__element")
+    for el in elements:
+        code_div = el.find("div", class_="outcome-content-homepage__sub-list__element__identifier")
+        text_div = el.find("div", class_="outcome-content-homepage__sub-list__element__text")
+        if not code_div:
+            continue
+
+        code_link = code_div.find("a")
+        code = clean_text(code_div.get_text())
+        title = clean_text(text_div.get_text()) if text_div else ""
+        href = _make_full_url(code_link["href"]) if code_link and code_link.get("href") else ""
+
+        result.append({
+            "group": group_name,
+            "code": code,
+            "title": title,
+            "detail_url": href,
+        })
+    return result
+
+
 def parse_outcomes_page(html: str, curriculum_id: int) -> list[dict[str, Any]]:
-    """Parse the outcomes overview page to get groups and outcome links."""
+    """Parse the outcomes overview page to get groups and outcome links.
+
+    Handles three page structures:
+    - Type A: Groups with sub-list elements containing code + title
+    - Type B: Groups where the header link IS the outcome (empty sub-lists)
+    - Type C: Flat list of cd_web_menu_item or sub-list elements with no groups
+    """
     soup = BeautifulSoup(html, "html.parser")
-    groups = soup.find_all("div", class_="outcome-content-homepage__group")
     result = []
 
-    for group in groups:
-        header_div = group.find("div", class_="outcome_content_homepage__group__header")
-        if not header_div:
-            continue
-        header_link = header_div.find("a")
-        group_name = clean_text(header_link.get_text()) if header_link else clean_text(header_div.get_text())
-
-        elements = group.find_all("div", class_="outcome-content-homepage__sub-list__element")
-        for el in elements:
-            code_div = el.find("div", class_="outcome-content-homepage__sub-list__element__identifier")
-            text_div = el.find("div", class_="outcome-content-homepage__sub-list__element__text")
-            if not code_div:
+    # First, try Type A: groups with sub-list elements inside
+    groups = soup.find_all("div", class_="outcome-content-homepage__group")
+    if groups:
+        for group in groups:
+            header_div = group.find("div", class_="outcome_content_homepage__group__header")
+            if not header_div:
                 continue
+            header_link = header_div.find("a")
+            group_name = clean_text(header_link.get_text()) if header_link else clean_text(header_div.get_text())
 
-            code_link = code_div.find("a")
-            code = clean_text(code_div.get_text())
-            title = clean_text(text_div.get_text()) if text_div else ""
+            sub_elements = _parse_sub_list_elements(group, group_name)
 
-            href = ""
-            if code_link and code_link.get("href"):
-                href = code_link["href"]
-                if not href.startswith("http"):
-                    href = f"{BASE_URL}/{href}"
+            if sub_elements:
+                # Type A: normal sub-list elements inside groups
+                result.extend(sub_elements)
+            elif header_link and header_link.get("href") and "oc=" in header_link.get("href", ""):
+                # Type B: group header itself is the outcome link
+                href = _make_full_url(header_link["href"])
+                result.append({
+                    "group": "",
+                    "code": group_name,
+                    "title": "",
+                    "detail_url": href,
+                })
 
+    # If we found outcomes from groups, return them
+    if result:
+        return result
+
+    # Type C fallback: check for sub-list elements directly in the page (not inside groups)
+    homepage_list = soup.find("div", class_="outcome-content-homepage__list")
+    if homepage_list:
+        sub_elements = _parse_sub_list_elements(homepage_list, "")
+        if sub_elements:
+            return sub_elements
+
+    # Type C fallback: flat list of cd_web_menu_item links
+    menu_items = soup.find_all("div", class_="cd_web_menu_item")
+    for item in menu_items:
+        link = item.find("a", href=lambda h: h and "oc=" in h)
+        if link:
+            code = clean_text(link.get_text())
+            href = _make_full_url(link["href"])
             result.append({
-                "group": group_name,
+                "group": "",
                 "code": code,
-                "title": title,
+                "title": "",
                 "detail_url": href,
             })
 
@@ -134,6 +189,12 @@ def parse_outcome_detail_full(html: str) -> dict[str, Any]:
     title = clean_text(title_div.get_text()) if title_div else ""
 
     code_div = soup.find("div", class_="outcome_content_identifier")
+    if not code_div:
+        header = soup.find("div", class_="content_section_header")
+        if header:
+            header_text = clean_text(header.get_text())
+            if re.match(r"^[A-Z]+\d", header_text):
+                code_div = header
     code = clean_text(code_div.get_text()) if code_div else ""
 
     indicators = []
@@ -188,10 +249,15 @@ def parse_outcome_detail_full(html: str) -> dict[str, Any]:
 
 
 def determine_level_label(code: str, curriculum_name: str) -> str:
-    """Determine the level label (Level 10, Level 20, Level 30) from outcome code."""
+    """Determine the level label (Level 10, Level 20, Level 30) from outcome code or curriculum name."""
     level = extract_level_from_code(code)
     if level:
         return f"Level {level}"
+    # Fall back to extracting level from curriculum name for single-level curricula
+    # e.g., "Economics 20" -> "Level 20", but NOT "Arts Education 10, 20, 30"
+    level_matches = re.findall(r"\b(10|20|30)\b", curriculum_name)
+    if len(level_matches) == 1:
+        return f"Level {level_matches[0]}"
     return "Outcomes"
 
 
@@ -217,10 +283,14 @@ def extract_subject_base_name(curriculum_name: str) -> str:
     e.g. 'Arts Education 10, 20, 30' -> 'Arts Education'
          'Biology 30' -> 'Biology'
          'Instrumental Jazz 10' -> 'Instrumental Jazz'
+         'History 30: Canadian Studies' -> 'History: Canadian Studies'
     """
     name = re.sub(r"\s*\(.*?\)\s*$", "", curriculum_name)
-    name = re.sub(r"\s+\d{1,2}(?:\s*,\s*\d{1,2})*\s*$", "", name)
-    return name.strip()
+    # Remove level numbers (10, 20, 30) whether at end or before a colon suffix
+    name = re.sub(r"\s+\d{1,2}(?:\s*,\s*\d{1,2})*(?=\s*:|$)", "", name)
+    # Clean up any resulting double spaces or leading colons
+    name = re.sub(r"\s+", " ", name).strip()
+    return name
 
 
 async def scrape_curriculum(
@@ -251,43 +321,47 @@ async def scrape_curriculum(
         logger.warning(f"No outcomes found for {curriculum_name}")
         return [{curriculum_name: {"Pdf_url": pdf_url, "note": "No outcomes found on the web page"}}]
 
-    detailed_outcomes = []
-    total = len(outcome_list)
-    for i, oc in enumerate(outcome_list):
+    async def fetch_detail(oc: dict) -> dict:
         detail_url = oc.get("detail_url", "")
         if not detail_url:
-            detailed_outcomes.append({
+            return {
                 "group": oc["group"],
                 "code": oc["code"],
                 "title": oc["title"],
                 "indicators": [],
-            })
-            continue
-
+            }
         try:
             detail_html = await fetch_page(client, detail_url)
             detail = parse_outcome_detail_full(detail_html)
-
-            detailed_outcomes.append({
+            return {
                 "group": oc["group"],
                 "code": detail.get("code") or oc["code"],
                 "title": detail.get("title") or oc["title"],
                 "indicators": detail.get("indicators", []),
-            })
+            }
         except Exception as e:
             logger.error(f"Failed to fetch detail for {oc['code']}: {e}")
-            detailed_outcomes.append({
+            return {
                 "group": oc["group"],
                 "code": oc["code"],
                 "title": oc["title"],
                 "indicators": [],
                 "error": str(e),
-            })
+            }
 
-        if progress_callback and (i + 1) % 5 == 0:
-            progress_callback(curriculum_name, i + 1, total)
+    # Fetch detail pages in concurrent batches of 5
+    detailed_outcomes = []
+    total = len(outcome_list)
+    batch_size = 5
+    for batch_start in range(0, total, batch_size):
+        batch = outcome_list[batch_start:batch_start + batch_size]
+        batch_results = await asyncio.gather(*[fetch_detail(oc) for oc in batch])
+        detailed_outcomes.extend(batch_results)
 
-        await asyncio.sleep(0.3)
+        if progress_callback:
+            progress_callback(curriculum_name, min(batch_start + batch_size, total), total)
+
+        await asyncio.sleep(0.1)
 
     levels = organize_by_level(detailed_outcomes, curriculum_name)
     base_name = extract_subject_base_name(curriculum_name)
@@ -364,7 +438,7 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
                 logger.error(f"Failed to scrape {name}: {e}")
                 results.append({name: {"error": str(e)}})
 
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(0.2)
 
     if progress_callback:
         progress_callback("overall", total, total, "Complete!")
