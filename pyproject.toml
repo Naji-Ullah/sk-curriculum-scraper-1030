@@ -1,0 +1,17 @@
+[project]
+name = "sk-curriculum-scraper-1030"
+version = "1.0.0"
+description = "Saskatchewan Curriculum Scraper for Levels 10, 20, 30"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]>=0.115.0",
+    "uvicorn>=0.34.0",
+    "playwright>=1.49.0",
+    "beautifulsoup4>=4.12.0",
+    "lxml>=5.0.0",
+    "httpx>=0.28.0",
+]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
