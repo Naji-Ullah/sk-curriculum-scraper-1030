@@ -155,9 +155,22 @@ async def get_results():
         with open(f, encoding="utf-8") as fp:
             data = json.load(fp)
         subject_name = list(data.keys())[0] if data else f.stem
-        level_names = [k for k in data.get(subject_name, {}) if k.startswith("Level")]
+        subject_data = data.get(subject_name, {})
+
+        # BAL/CCC files have a list as value, not a dict with levels
+        if isinstance(subject_data, list):
+            files.append({
+                "filename": f.name,
+                "subject": subject_name,
+                "level": "N/A",
+                "outcomes": len(subject_data),
+                "size": f.stat().st_size,
+            })
+            continue
+
+        level_names = [k for k in subject_data if isinstance(k, str) and k.startswith("Level")]
         outcome_count = 0
-        for key, val in data.get(subject_name, {}).items():
+        for key, val in subject_data.items():
             if isinstance(val, dict) and "Outcomes" in val:
                 outcome_count += len(val["Outcomes"])
 
