@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("scraped_data")
 
+# Canonical titles (used as output keys)
 BAL_TITLES = [
     "Lifelong Learners",
     "Sense of Self, Community, and Place",
@@ -29,30 +30,37 @@ CCC_TITLES = [
     "Developing Social Responsibility",
 ]
 
+# Patterns that match title variations across PDFs
+BAL_PATTERNS = [
+    (re.compile(r"Lifelong Learners"), "Lifelong Learners"),
+    (re.compile(r"Sense of Self,? Community,? and Place"), "Sense of Self, Community, and Place"),
+    (re.compile(r"Engaged Citizens"), "Engaged Citizens"),
+]
+
+CCC_PATTERNS = [
+    (re.compile(r"Developing Thinking"), "Developing Thinking"),
+    (re.compile(r"Developing Identity and Interdependence"), "Developing Identity and Interdependence"),
+    (re.compile(r"Developing Literacies"), "Developing Literacies"),
+    (re.compile(r"Developing Social Responsibility"), "Developing Social Responsibility"),
+]
+
 
 def _clean_paragraph(text: str) -> str:
     """Clean extracted PDF paragraph text."""
+    # Remove "(Related to the following Goals of Education: ...)" blocks
+    text = re.sub(r"\(Related to the following Goals of Education:.*?\)", "", text, flags=re.DOTALL)
+    # Remove "(Related to CEL(s) of ...)" blocks
+    text = re.sub(r"\(Related to CELs? of .*?\)", "", text, flags=re.DOTALL)
+    # Remove K-12 Goals sidebar text
+    text = re.sub(r"K-12 Goals for .*?(?=\n[A-Z]|\Z)", "", text, flags=re.DOTALL)
+    # Collapse whitespace
     text = re.sub(r"\s+", " ", text).strip()
+    # Remove leading colons / bullets from badly extracted text
+    text = re.sub(r"^[\s:•*]+", "", text).strip()
     return text
 
 
-def _extract_section_text(full_text: str, start_marker: str, end_markers: list[str]) -> str:
-    """Extract text between a start marker and the first matching end marker."""
-    start_idx = full_text.find(start_marker)
-    if start_idx == -1:
-        return ""
-    start_idx += len(start_marker)
-
-    end_idx = len(full_text)
-    for marker in end_markers:
-        idx = full_text.find(marker, start_idx)
-        if idx != -1 and idx < end_idx:
-            end_idx = idx
-
-    return full_text[start_idx:end_idx].strip()
-
-
-def _find_content_pages(doc: fitz.Document, section_name: str, content_marker: str) -> str:
+def _find_content_pages(doc: fitz.Document, section_name: str, content_markers: list[str]) -> str:
     """Find and concatenate pages containing a section's actual content (not TOC)."""
     pages_text = []
     collecting = False
@@ -60,54 +68,98 @@ def _find_content_pages(doc: fitz.Document, section_name: str, content_marker: s
     for i in range(min(30, doc.page_count)):
         text = doc[i].get_text()
         if not collecting:
-            if section_name in text and content_marker in text and "Table of Contents" not in text:
+            if section_name in text and any(m in text for m in content_markers) and "Table of Contents" not in text:
                 collecting = True
                 pages_text.append(text)
         else:
-            # Don't stop if page still has subsection content we need
-            has_subsection = any(title in text for title in BAL_TITLES + CCC_TITLES)
+            has_subsection = any(pat.search(text) for pat, _ in BAL_PATTERNS + CCC_PATTERNS)
             has_stop_heading = any(heading in text for heading in [
                 "Outcomes and Indicators",
                 "Curriculum Outcomes",
                 "Teaching Resources",
                 "Assessment and Evaluation",
-                "References",
             ]) and section_name not in text
             if has_stop_heading and not has_subsection:
                 break
             pages_text.append(text)
-            # Stop after 3 continuation pages max
-            if len(pages_text) >= 4:
+            if len(pages_text) >= 5:
                 break
 
     return "\n".join(pages_text)
 
 
+def _find_sections(content: str, patterns: list[tuple[re.Pattern, str]]) -> list[dict[str, str]]:
+    """Find all section headings in text and extract content between them."""
+    # Find all heading positions
+    headings: list[tuple[int, int, str]] = []
+    for pat, canonical_title in patterns:
+        for m in pat.finditer(content):
+            headings.append((m.start(), m.end(), canonical_title))
+
+    # Sort by position in text
+    headings.sort(key=lambda x: x[0])
+
+    # Deduplicate: keep only the last occurrence of each title
+    # (first occurrences may be in TOC or intro text)
+    seen_titles: dict[str, int] = {}
+    for idx, (start, end, title) in enumerate(headings):
+        seen_titles[title] = idx
+    headings = [headings[i] for i in sorted(seen_titles.values())]
+
+    # Also find stop markers that indicate end of the whole section
+    stop_patterns = [
+        re.compile(r"K-12 Aim and Goals"),
+        re.compile(r"Aim and Goals of"),
+        re.compile(r"An Effective .* Program"),
+        re.compile(r"Cross-curricular Competencies\b"),
+        re.compile(r"\*A sense of place"),
+    ]
+
+    results = []
+    for i, (start, end, title) in enumerate(headings):
+        # Text starts after the heading
+        text_start = end
+
+        # Text ends at the next heading or stop marker
+        if i + 1 < len(headings):
+            text_end = headings[i + 1][0]
+        else:
+            text_end = len(content)
+
+        # Also check stop markers
+        for stop_pat in stop_patterns:
+            m = stop_pat.search(content, text_start)
+            if m and m.start() < text_end:
+                text_end = m.start()
+
+        description = content[text_start:text_end]
+        description = _clean_paragraph(description)
+
+        if description and len(description) > 10:
+            results.append({"title": title, "description": description})
+
+    return results
+
+
 def parse_broad_areas_of_learning(doc: fitz.Document) -> list[dict[str, str]] | None:
     """Parse Broad Areas of Learning from a PDF document."""
-    content = _find_content_pages(doc, "Broad Areas of Learning", "There are three Broad Areas")
-    if not content:
-        # Try alternate intro phrasing
-        content = _find_content_pages(doc, "Broad Areas of Learning", "Lifelong Learners")
+    content = _find_content_pages(
+        doc,
+        "Broad Areas of Learning",
+        ["There are three Broad Areas", "Lifelong Learners", "Sense of Self"],
+    )
     if not content:
         return None
 
-    # Remove page headers (page numbers + subject name lines at top of pages)
-    content = re.sub(r"^\d+\n[^\n]+\n", "", content, flags=re.MULTILINE)
+    # Remove page headers (page number + subject name at top of pages)
+    content = re.sub(r"^\s*\n\s*[^\n]{0,60}\s*\n\s*\n?\s*\d+\s*\n", "\n", content, flags=re.MULTILINE)
+    content = re.sub(r"^\d+\s*\n[^\n]+\n", "\n", content, flags=re.MULTILINE)
 
-    results = []
-    end_markers_by_title = {
-        "Lifelong Learners": ["Sense of Self, Community, and Place", "Related to the following"],
-        "Sense of Self, Community, and Place": ["Engaged Citizens", "Related to the following"],
-        "Engaged Citizens": ["Related to the following", "Cross-curricular Competencies", "K-12 Goals"],
-    }
+    results = _find_sections(content, BAL_PATTERNS)
 
-    for title in BAL_TITLES:
-        end_markers = end_markers_by_title.get(title, ["Related to the following"])
-        description = _extract_section_text(content, title, end_markers)
-        description = _clean_paragraph(description)
-        if description:
-            results.append({"title": title, "description": description})
+    # Filter to only BAL titles
+    bal_titles_set = set(BAL_TITLES)
+    results = [r for r in results if r["title"] in bal_titles_set]
 
     return results if results else None
 
@@ -117,29 +169,18 @@ def parse_cross_curricular_competencies(doc: fitz.Document) -> list[dict[str, st
     content = _find_content_pages(
         doc,
         "Cross-curricular Competencies",
-        "The Cross-curricular Competencies are four",
+        ["The Cross-curricular Competencies are four", "Developing Thinking", "cross-curricular competencies"],
     )
-    if not content:
-        content = _find_content_pages(doc, "Cross-curricular Competencies", "Developing Thinking")
     if not content:
         return None
 
-    content = re.sub(r"^\d+\n[^\n]+\n", "", content, flags=re.MULTILINE)
+    content = re.sub(r"^\s*\n\s*[^\n]{0,60}\s*\n\s*\n?\s*\d+\s*\n", "\n", content, flags=re.MULTILINE)
+    content = re.sub(r"^\d+\s*\n[^\n]+\n", "\n", content, flags=re.MULTILINE)
 
-    results = []
-    end_markers_by_title = {
-        "Developing Thinking": ["Developing Identity and Interdependence", "K-12 Goals for"],
-        "Developing Identity and Interdependence": ["Developing Literacies", "K-12 Goals for"],
-        "Developing Literacies": ["Developing Social Responsibility", "K-12 Goals for"],
-        "Developing Social Responsibility": ["K-12 Aim and Goals", "K-12 Goals for", "Aim and Goals of", "An Effective"],
-    }
+    results = _find_sections(content, CCC_PATTERNS)
 
-    for title in CCC_TITLES:
-        end_markers = end_markers_by_title.get(title, ["K-12 Goals for"])
-        description = _extract_section_text(content, title, end_markers)
-        description = _clean_paragraph(description)
-        if description:
-            results.append({"title": title, "description": description})
+    ccc_titles_set = set(CCC_TITLES)
+    results = [r for r in results if r["title"] in ccc_titles_set]
 
     return results if results else None
 
