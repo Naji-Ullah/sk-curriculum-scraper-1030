@@ -11,7 +11,7 @@ from typing import Any
 import httpx
 from bs4 import BeautifulSoup, Tag
 
-from app.curriculum_config import BASE_URL, CURRICULA
+from app.curriculum_config import BASE_URL, CORE_FRENCH_K9, CURRICULA
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +284,10 @@ def determine_level_label(code: str, curriculum_name: str) -> str:
     level_matches = re.findall(r"\b(10|20|30)\b", curriculum_name)
     if len(level_matches) == 1:
         return f"Level {level_matches[0]}"
+    # K-9: check for single-digit levels in curriculum name (e.g. "Core French 1")
+    k9_matches = re.findall(r"\b([1-9])\b", curriculum_name)
+    if len(k9_matches) == 1:
+        return f"Level {k9_matches[0]}"
     return "Outcomes"
 
 
@@ -553,3 +557,55 @@ def _should_skip(
         _filename_for_subject(f"{base_name} {lvl}") in existing_files
         for lvl in level_matches
     )
+
+
+async def scrape_core_french_k9(
+    progress_callback=None, skip_existing: bool = False
+) -> list[dict[str, Any]]:
+    """Scrape Core French K-9 (Levels 1-9), producing one JSON file per level."""
+    OUTPUT_DIR.mkdir(exist_ok=True)
+    results = []
+    existing_files = _get_existing_files() if skip_existing else set()
+
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        headers={"User-Agent": "SK-Curriculum-Scraper/1.0"},
+    ) as client:
+        total = len(CORE_FRENCH_K9)
+        for i, curr in enumerate(CORE_FRENCH_K9):
+            name = curr["name"]
+            cid = curr["id"]
+
+            if progress_callback:
+                progress_callback("overall", i, total, f"Scraping: {name}")
+
+            if skip_existing:
+                filename = _filename_for_subject(name)
+                if filename in existing_files:
+                    logger.info(f"[{i+1}/{total}] Skipping (already scraped): {name}")
+                    if progress_callback:
+                        progress_callback("overall", i, total, f"Skipped (exists): {name}")
+                    continue
+
+            logger.info(f"[{i+1}/{total}] Scraping: {name} (id={cid})")
+
+            try:
+                per_level_results = await scrape_curriculum(client, cid, name, progress_callback)
+                for result in per_level_results:
+                    results.append(result)
+                    subject_name = list(result.keys())[0]
+                    filename = _filename_for_subject(subject_name)
+                    output_path = OUTPUT_DIR / f"{filename}.json"
+                    with open(output_path, "w", encoding="utf-8") as f:
+                        json.dump(result, f, indent=4, ensure_ascii=False)
+                    logger.info(f"Saved: {output_path}")
+            except Exception as e:
+                logger.error(f"Failed to scrape {name}: {e}")
+                results.append({name: {"error": str(e)}})
+
+            await asyncio.sleep(0.2)
+
+    if progress_callback:
+        progress_callback("overall", total, total, "Complete!")
+
+    return results

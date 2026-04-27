@@ -9,8 +9,8 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from app.curriculum_config import CURRICULA
-from app.scraper import OUTPUT_DIR, scrape_all
+from app.curriculum_config import CORE_FRENCH_K9, CURRICULA
+from app.scraper import OUTPUT_DIR, scrape_all, scrape_core_french_k9
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -56,6 +56,42 @@ async def start_scrape(request: Request):
 
     asyncio.create_task(run_scraper(skip_existing=skip_existing))
     return {"status": "started", "skip_existing": skip_existing}
+
+
+@app.post("/api/scrape-core-french-k9")
+async def start_scrape_core_french(request: Request):
+    if scraping_state["is_running"]:
+        return JSONResponse({"status": "already_running"}, status_code=409)
+
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    skip_existing = body.get("skip_existing", False)
+
+    scraping_state["is_running"] = True
+    scraping_state["progress"] = 0
+    scraping_state["total"] = 0
+    scraping_state["current"] = "Starting Core French K-9..."
+    scraping_state["errors"] = []
+    scraping_state["completed"] = False
+
+    asyncio.create_task(run_core_french_k9_scraper(skip_existing=skip_existing))
+    return {"status": "started", "skip_existing": skip_existing}
+
+
+async def run_core_french_k9_scraper(skip_existing: bool = False):
+    try:
+        results = await scrape_core_french_k9(progress_callback=progress_callback, skip_existing=skip_existing)
+        errors = []
+        for r in results:
+            for name, data in r.items():
+                if "error" in data:
+                    errors.append(f"{name}: {data['error']}")
+        scraping_state["errors"] = errors
+        scraping_state["completed"] = True
+    except Exception as e:
+        logger.error(f"Core French K-9 scraping failed: {e}")
+        scraping_state["errors"].append(str(e))
+    finally:
+        scraping_state["is_running"] = False
 
 
 async def run_scraper(skip_existing: bool = False):
@@ -182,8 +218,9 @@ HTML_PAGE = """<!DOCTYPE html>
     </div>
     <div class="container">
         <div class="controls">
-            <button class="btn btn-primary" id="startBtn" onclick="startScraping(false)">Scrape All</button>
-            <button class="btn btn-primary" id="startNewBtn" onclick="startScraping(true)" style="background:#2e7d32;">Scrape New Only</button>
+            <button class="btn btn-primary" id="startBtn" onclick="startScraping(false)">Scrape All (10, 20, 30)</button>
+            <button class="btn btn-primary" id="startNewBtn" onclick="startScraping(true)" style="background:#2e7d32;">Scrape New Only (10, 20, 30)</button>
+            <button class="btn btn-primary" id="startCFK9Btn" onclick="startCoreFrenchK9()" style="background:#1565c0;">Scrape Core French K-9</button>
             <button class="btn btn-secondary" onclick="refreshResults()">Refresh Results</button>
         </div>
 
@@ -234,14 +271,22 @@ HTML_PAGE = """<!DOCTYPE html>
     <script>
         let pollInterval = null;
 
-        async function startScraping(skipExisting) {
-            const btn = document.getElementById('startBtn');
-            const btnNew = document.getElementById('startNewBtn');
-            btn.disabled = true;
-            btnNew.disabled = true;
-            btn.textContent = 'Scraping...';
-            btnNew.textContent = 'Scraping...';
+        function disableAllBtns() {
+            ['startBtn','startNewBtn','startCFK9Btn'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Scraping...'; }
+            });
+        }
 
+        function enableAllBtns() {
+            ['startBtn','startNewBtn','startCFK9Btn'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) { b.disabled = false; b.textContent = b.dataset.origText || b.textContent; }
+            });
+        }
+
+        async function startScraping(skipExisting) {
+            disableAllBtns();
             document.getElementById('progressSection').style.display = 'block';
 
             try {
@@ -251,17 +296,28 @@ HTML_PAGE = """<!DOCTYPE html>
                     body: JSON.stringify({skip_existing: !!skipExisting})
                 });
                 const data = await resp.json();
-                if (data.status === 'already_running') {
-                    startPolling();
-                    return;
-                }
                 startPolling();
             } catch (e) {
                 alert('Failed to start scraping: ' + e.message);
-                btn.disabled = false;
-                btnNew.disabled = false;
-                btn.textContent = 'Scrape All';
-                btnNew.textContent = 'Scrape New Only';
+                enableAllBtns();
+            }
+        }
+
+        async function startCoreFrenchK9() {
+            disableAllBtns();
+            document.getElementById('progressSection').style.display = 'block';
+
+            try {
+                const resp = await fetch('/api/scrape-core-french-k9', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await resp.json();
+                startPolling();
+            } catch (e) {
+                alert('Failed to start Core French K-9 scraping: ' + e.message);
+                enableAllBtns();
             }
         }
 
@@ -298,10 +354,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 if (!data.is_running && (data.completed || data.progress > 0)) {
                     clearInterval(pollInterval);
                     pollInterval = null;
-                    document.getElementById('startBtn').disabled = false;
-                    document.getElementById('startBtn').textContent = 'Scrape All';
-                    document.getElementById('startNewBtn').disabled = false;
-                    document.getElementById('startNewBtn').textContent = 'Scrape New Only';
+                    enableAllBtns();
                     if (data.completed) {
                         document.getElementById('progressFill').style.width = '100%';
                         document.getElementById('progressText').textContent = '100% - Complete!';

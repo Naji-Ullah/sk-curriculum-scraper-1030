@@ -1,4 +1,4 @@
-"""Configuration mapping all Level 10/20/30 curricula to their website IDs."""
+"""Configuration mapping all curricula to their website IDs."""
 
 CURRICULA = [
     # Arts Education
@@ -147,6 +147,19 @@ CURRICULA = [
     {"name": "Energy and Mines 10, 20, 30", "id": 717, "category": "PAA: Resource Management", "modular": True},
     {"name": "Forestry Studies 20, 30", "id": 721, "category": "PAA: Resource Management", "modular": True},
     {"name": "Wildlife and Habitat Studies 10, 20, 30", "id": 723, "category": "PAA: Resource Management", "modular": True},
+]
+
+# Core French K-9 (separate section on the website at language=fr&megamenu=coreFrench)
+CORE_FRENCH_K9 = [
+    {"name": "Core French 1", "id": 489, "category": "Core French K-9"},
+    {"name": "Core French 2", "id": 490, "category": "Core French K-9"},
+    {"name": "Core French 3", "id": 491, "category": "Core French K-9"},
+    {"name": "Core French 4", "id": 398, "category": "Core French K-9"},
+    {"name": "Core French 5", "id": 399, "category": "Core French K-9"},
+    {"name": "Core French 6", "id": 400, "category": "Core French K-9"},
+    {"name": "Core French 7", "id": 401, "category": "Core French K-9"},
+    {"name": "Core French 8", "id": 402, "category": "Core French K-9"},
+    {"name": "Core French 9", "id": 403, "category": "Core French K-9"},
 ]
 
 BASE_URL = "https://curriculum.gov.sk.ca"
