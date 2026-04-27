@@ -340,8 +340,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
                 if (data.is_running) {
                     document.getElementById('progressSection').style.display = 'block';
-                    document.getElementById('startBtn').disabled = true;
-                    document.getElementById('startBtn').textContent = 'Scraping...';
+                    disableAllBtns();
                 }
 
                 if (data.errors && data.errors.length > 0) {
@@ -438,8 +437,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 const data = await resp.json();
                 if (data.is_running) {
                     document.getElementById('progressSection').style.display = 'block';
-                    document.getElementById('startBtn').disabled = true;
-                    document.getElementById('startBtn').textContent = 'Scraping...';
+                    disableAllBtns();
                     startPolling();
                 } else if (data.completed) {
                     document.getElementById('progressSection').style.display = 'block';
