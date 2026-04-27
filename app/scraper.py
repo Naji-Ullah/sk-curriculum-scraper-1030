@@ -185,12 +185,13 @@ def parse_outcome_detail_full(html: str) -> dict[str, Any]:
     """Parse an outcome detail page to extract title and indicators with sub-headings."""
     soup = BeautifulSoup(html, "html.parser")
 
-    # PAA module pages have a different structure: the actual outcome title is
-    # inside outcome_content_child_list after the "Outcome" header, not in
-    # outcome_content_text (which contains the module name + metadata).
+    # PAA module pages: combine module name + actual outcome text as title.
+    # e.g. "Module 1: Introduction to Accounting\nInvestigate the need for accounting in business."
     title = ""
     module_name_div = soup.find("div", class_="outcome_content_module_name")
     if module_name_div:
+        module_name = clean_text(module_name_div.get_text())
+        outcome_text = ""
         child_list_div = soup.find("div", class_="outcome_content_child_list")
         if child_list_div:
             for child in child_list_div.children:
@@ -203,8 +204,12 @@ def parse_outcome_detail_full(html: str) -> dict[str, Any]:
                     break
                 text = clean_text(child.get_text())
                 if text:
-                    title = text
+                    outcome_text = text
                     break
+        if module_name and outcome_text:
+            title = f"{module_name}\n{outcome_text}"
+        else:
+            title = module_name or outcome_text
     if not title:
         title_div = soup.find("div", class_="outcome_content_text")
         title = clean_text(title_div.get_text()) if title_div else ""
