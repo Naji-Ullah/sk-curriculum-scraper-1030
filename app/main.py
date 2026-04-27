@@ -46,7 +46,11 @@ async def start_scrape(request: Request):
         return JSONResponse({"status": "already_running"}, status_code=409)
     scraping_state["is_running"] = True
 
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    try:
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    except Exception:
+        scraping_state["is_running"] = False
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
     skip_existing = body.get("skip_existing", False)
 
     scraping_state["progress"] = 0
@@ -65,7 +69,11 @@ async def start_scrape_core_french(request: Request):
         return JSONResponse({"status": "already_running"}, status_code=409)
     scraping_state["is_running"] = True
 
-    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    try:
+        body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    except Exception:
+        scraping_state["is_running"] = False
+        return JSONResponse({"error": "Invalid request body"}, status_code=400)
     skip_existing = body.get("skip_existing", False)
 
     scraping_state["progress"] = 0
