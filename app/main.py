@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.curriculum_config import CORE_FRENCH_K9, CURRICULA
+from app.pdf_scraper import scrape_bal_and_ccc
 from app.scraper import OUTPUT_DIR, scrape_all, scrape_core_french_k9
 
 logging.basicConfig(level=logging.INFO)
@@ -89,6 +90,34 @@ async def run_core_french_k9_scraper(skip_existing: bool = False):
         scraping_state["completed"] = True
     except Exception as e:
         logger.error(f"Core French K-9 scraping failed: {e}")
+        scraping_state["errors"].append(str(e))
+    finally:
+        scraping_state["is_running"] = False
+
+
+@app.post("/api/scrape-bal-ccc")
+async def start_scrape_bal_ccc(request: Request):
+    if scraping_state["is_running"]:
+        return JSONResponse({"status": "already_running"}, status_code=409)
+
+    scraping_state["is_running"] = True
+    scraping_state["progress"] = 0
+    scraping_state["total"] = 0
+    scraping_state["current"] = "Starting BAL & CCC extraction..."
+    scraping_state["errors"] = []
+    scraping_state["completed"] = False
+
+    asyncio.create_task(run_bal_ccc_scraper())
+    return {"status": "started"}
+
+
+async def run_bal_ccc_scraper():
+    try:
+        results = await scrape_bal_and_ccc(progress_callback=progress_callback)
+        scraping_state["errors"] = results.get("skipped", [])
+        scraping_state["completed"] = True
+    except Exception as e:
+        logger.error(f"BAL/CCC scraping failed: {e}")
         scraping_state["errors"].append(str(e))
     finally:
         scraping_state["is_running"] = False
@@ -221,6 +250,7 @@ HTML_PAGE = """<!DOCTYPE html>
             <button class="btn btn-primary" id="startBtn" onclick="startScraping(false)">Scrape All (10, 20, 30)</button>
             <button class="btn btn-primary" id="startNewBtn" onclick="startScraping(true)" style="background:#2e7d32;">Scrape New Only (10, 20, 30)</button>
             <button class="btn btn-primary" id="startCFK9Btn" onclick="startCoreFrenchK9()" style="background:#1565c0;">Scrape Core French K-9</button>
+            <button class="btn btn-primary" id="startBALBtn" onclick="startBALCCC()" style="background:#e65100;">Scrape BAL & CCC (from PDFs)</button>
             <button class="btn btn-secondary" onclick="refreshResults()">Refresh Results</button>
         </div>
 
@@ -272,14 +302,14 @@ HTML_PAGE = """<!DOCTYPE html>
         let pollInterval = null;
 
         function disableAllBtns() {
-            ['startBtn','startNewBtn','startCFK9Btn'].forEach(id => {
+            ['startBtn','startNewBtn','startCFK9Btn','startBALBtn'].forEach(id => {
                 const b = document.getElementById(id);
                 if (b) { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Scraping...'; }
             });
         }
 
         function enableAllBtns() {
-            ['startBtn','startNewBtn','startCFK9Btn'].forEach(id => {
+            ['startBtn','startNewBtn','startCFK9Btn','startBALBtn'].forEach(id => {
                 const b = document.getElementById(id);
                 if (b) { b.disabled = false; b.textContent = b.dataset.origText || b.textContent; }
             });
@@ -317,6 +347,24 @@ HTML_PAGE = """<!DOCTYPE html>
                 startPolling();
             } catch (e) {
                 alert('Failed to start Core French K-9 scraping: ' + e.message);
+                enableAllBtns();
+            }
+        }
+
+        async function startBALCCC() {
+            disableAllBtns();
+            document.getElementById('progressSection').style.display = 'block';
+
+            try {
+                const resp = await fetch('/api/scrape-bal-ccc', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await resp.json();
+                startPolling();
+            } catch (e) {
+                alert('Failed to start BAL/CCC scraping: ' + e.message);
                 enableAllBtns();
             }
         }
