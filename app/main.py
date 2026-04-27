@@ -40,9 +40,12 @@ async def index():
 
 
 @app.post("/api/scrape")
-async def start_scrape():
+async def start_scrape(request: Request):
     if scraping_state["is_running"]:
         return JSONResponse({"status": "already_running"}, status_code=409)
+
+    body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
+    skip_existing = body.get("skip_existing", False)
 
     scraping_state["is_running"] = True
     scraping_state["progress"] = 0
@@ -51,13 +54,13 @@ async def start_scrape():
     scraping_state["errors"] = []
     scraping_state["completed"] = False
 
-    asyncio.create_task(run_scraper())
-    return {"status": "started"}
+    asyncio.create_task(run_scraper(skip_existing=skip_existing))
+    return {"status": "started", "skip_existing": skip_existing}
 
 
-async def run_scraper():
+async def run_scraper(skip_existing: bool = False):
     try:
-        results = await scrape_all(progress_callback=progress_callback)
+        results = await scrape_all(progress_callback=progress_callback, skip_existing=skip_existing)
         errors = []
         for r in results:
             for name, data in r.items():
@@ -179,7 +182,8 @@ HTML_PAGE = """<!DOCTYPE html>
     </div>
     <div class="container">
         <div class="controls">
-            <button class="btn btn-primary" id="startBtn" onclick="startScraping()">Start Scraping</button>
+            <button class="btn btn-primary" id="startBtn" onclick="startScraping(false)">Scrape All</button>
+            <button class="btn btn-primary" id="startNewBtn" onclick="startScraping(true)" style="background:#2e7d32;">Scrape New Only</button>
             <button class="btn btn-secondary" onclick="refreshResults()">Refresh Results</button>
         </div>
 
@@ -209,7 +213,7 @@ HTML_PAGE = """<!DOCTYPE html>
                     </tr>
                 </thead>
                 <tbody id="resultsBody">
-                    <tr><td colspan="5" style="text-align:center;color:#999;padding:40px;">No results yet. Click "Start Scraping" to begin.</td></tr>
+                    <tr><td colspan="5" style="text-align:center;color:#999;padding:40px;">No results yet. Click "Scrape All" or "Scrape New Only" to begin.</td></tr>
                 </tbody>
             </table>
         </div>
@@ -230,15 +234,22 @@ HTML_PAGE = """<!DOCTYPE html>
     <script>
         let pollInterval = null;
 
-        async function startScraping() {
+        async function startScraping(skipExisting) {
             const btn = document.getElementById('startBtn');
+            const btnNew = document.getElementById('startNewBtn');
             btn.disabled = true;
+            btnNew.disabled = true;
             btn.textContent = 'Scraping...';
+            btnNew.textContent = 'Scraping...';
 
             document.getElementById('progressSection').style.display = 'block';
 
             try {
-                const resp = await fetch('/api/scrape', { method: 'POST' });
+                const resp = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({skip_existing: !!skipExisting})
+                });
                 const data = await resp.json();
                 if (data.status === 'already_running') {
                     startPolling();
@@ -248,7 +259,9 @@ HTML_PAGE = """<!DOCTYPE html>
             } catch (e) {
                 alert('Failed to start scraping: ' + e.message);
                 btn.disabled = false;
-                btn.textContent = 'Start Scraping';
+                btnNew.disabled = false;
+                btn.textContent = 'Scrape All';
+                btnNew.textContent = 'Scrape New Only';
             }
         }
 
@@ -286,7 +299,9 @@ HTML_PAGE = """<!DOCTYPE html>
                     clearInterval(pollInterval);
                     pollInterval = null;
                     document.getElementById('startBtn').disabled = false;
-                    document.getElementById('startBtn').textContent = 'Start Scraping';
+                    document.getElementById('startBtn').textContent = 'Scrape All';
+                    document.getElementById('startNewBtn').disabled = false;
+                    document.getElementById('startNewBtn').textContent = 'Scrape New Only';
                     if (data.completed) {
                         document.getElementById('progressFill').style.width = '100%';
                         document.getElementById('progressText').textContent = '100% - Complete!';
@@ -305,7 +320,7 @@ HTML_PAGE = """<!DOCTYPE html>
                 const tbody = document.getElementById('resultsBody');
 
                 if (!data.files || data.files.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:40px;">No results yet. Click "Start Scraping" to begin.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:40px;">No results yet. Click "Scrape All" or "Scrape New Only" to begin.</td></tr>';
                     document.getElementById('stats').style.display = 'none';
                     return;
                 }

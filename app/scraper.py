@@ -400,8 +400,24 @@ async def scrape_curriculum(
     return per_level_results
 
 
-async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
-    """Scrape all Level 10/20/30 curricula, producing one JSON file per level."""
+def _filename_for_subject(subject_name: str) -> str:
+    """Generate a sanitized filename for a subject."""
+    filename = re.sub(r"[^\w\s-]", "", subject_name).strip()
+    return re.sub(r"\s+", " ", filename)
+
+
+def _get_existing_files() -> set[str]:
+    """Return set of existing JSON filenames (without extension) in the output dir."""
+    if not OUTPUT_DIR.exists():
+        return set()
+    return {f.stem for f in OUTPUT_DIR.glob("*.json")}
+
+
+async def scrape_all(progress_callback=None, skip_existing: bool = False) -> list[dict[str, Any]]:
+    """Scrape all Level 10/20/30 curricula, producing one JSON file per level.
+
+    If skip_existing=True, curricula whose JSON files already exist are skipped.
+    """
     OUTPUT_DIR.mkdir(exist_ok=True)
     results = []
 
@@ -409,6 +425,8 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
         c for c in CURRICULA
         if c.get("id") is not None and not c.get("skip") and not c.get("treaty")
     ]
+
+    existing_files = _get_existing_files() if skip_existing else set()
 
     async with httpx.AsyncClient(
         follow_redirects=True,
@@ -418,12 +436,22 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
         for i, curr in enumerate(active_curricula):
             name = curr["name"]
             cid = curr["id"]
-            logger.info(f"[{i+1}/{total}] Scraping: {name} (id={cid})")
 
             if progress_callback:
                 progress_callback(
                     "overall", i, total, f"Scraping: {name}"
                 )
+
+            # Check if this curriculum's files already exist
+            if skip_existing and _should_skip(name, curr, existing_files):
+                logger.info(f"[{i+1}/{total}] Skipping (already scraped): {name}")
+                if progress_callback:
+                    progress_callback(
+                        "overall", i, total, f"Skipped (exists): {name}"
+                    )
+                continue
+
+            logger.info(f"[{i+1}/{total}] Scraping: {name} (id={cid})")
 
             try:
                 per_level_results = await scrape_curriculum(
@@ -434,8 +462,7 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
                 for result in per_level_results:
                     results.append(result)
                     subject_name = list(result.keys())[0]
-                    filename = re.sub(r"[^\w\s-]", "", subject_name).strip()
-                    filename = re.sub(r"\s+", " ", filename)
+                    filename = _filename_for_subject(subject_name)
                     output_path = OUTPUT_DIR / f"{filename}.json"
                     with open(output_path, "w", encoding="utf-8") as f:
                         json.dump(result, f, indent=4, ensure_ascii=False)
@@ -451,3 +478,26 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
         progress_callback("overall", total, total, "Complete!")
 
     return results
+
+
+def _should_skip(
+    curriculum_name: str,
+    curr: dict[str, Any],
+    existing_files: set[str],
+) -> bool:
+    """Check if a curriculum's output files already exist."""
+    is_modular = curr.get("modular", False)
+    if is_modular:
+        filename = _filename_for_subject(curriculum_name)
+        return filename in existing_files
+
+    base_name = extract_subject_base_name(curriculum_name)
+    level_matches = re.findall(r"\b(10|20|30)\b", curriculum_name)
+    if len(level_matches) <= 1:
+        filename = _filename_for_subject(curriculum_name)
+        return filename in existing_files
+
+    return all(
+        _filename_for_subject(f"{base_name} {lvl}") in existing_files
+        for lvl in level_matches
+    )
