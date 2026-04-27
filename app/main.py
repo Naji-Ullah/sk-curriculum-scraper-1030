@@ -44,11 +44,11 @@ async def index():
 async def start_scrape(request: Request):
     if scraping_state["is_running"]:
         return JSONResponse({"status": "already_running"}, status_code=409)
+    scraping_state["is_running"] = True
 
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     skip_existing = body.get("skip_existing", False)
 
-    scraping_state["is_running"] = True
     scraping_state["progress"] = 0
     scraping_state["total"] = 0
     scraping_state["current"] = "Starting..."
@@ -63,11 +63,11 @@ async def start_scrape(request: Request):
 async def start_scrape_core_french(request: Request):
     if scraping_state["is_running"]:
         return JSONResponse({"status": "already_running"}, status_code=409)
+    scraping_state["is_running"] = True
 
     body = await request.json() if request.headers.get("content-type", "").startswith("application/json") else {}
     skip_existing = body.get("skip_existing", False)
 
-    scraping_state["is_running"] = True
     scraping_state["progress"] = 0
     scraping_state["total"] = 0
     scraping_state["current"] = "Starting Core French K-9..."
