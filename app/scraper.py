@@ -298,6 +298,7 @@ async def scrape_curriculum(
     curriculum_id: int,
     curriculum_name: str,
     progress_callback=None,
+    modular: bool = False,
 ) -> list[dict[str, Any]]:
     """Scrape a single curriculum's outcomes and indicators.
 
@@ -363,7 +364,10 @@ async def scrape_curriculum(
 
         await asyncio.sleep(0.1)
 
-    levels = organize_by_level(detailed_outcomes, curriculum_name)
+    if modular:
+        levels = {"Outcomes": detailed_outcomes}
+    else:
+        levels = organize_by_level(detailed_outcomes, curriculum_name)
     base_name = extract_subject_base_name(curriculum_name)
 
     per_level_results = []
@@ -422,7 +426,10 @@ async def scrape_all(progress_callback=None) -> list[dict[str, Any]]:
                 )
 
             try:
-                per_level_results = await scrape_curriculum(client, cid, name, progress_callback)
+                per_level_results = await scrape_curriculum(
+                    client, cid, name, progress_callback,
+                    modular=curr.get("modular", False),
+                )
 
                 for result in per_level_results:
                     results.append(result)

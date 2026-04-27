@@ -105,6 +105,48 @@ CURRICULA = [
     {"name": "Christian Ethics 10, 20, 30", "id": 775, "category": "Additional"},
     {"name": "Ukrainian-English Bilingual Education: Christian Ethics 9-12", "id": None, "category": "Additional", "skip": True},
     {"name": "Treaty Education Outcomes & Indicators (Additional)", "id": None, "category": "Additional", "treaty": True},
+    # Practical & Applied Arts — Agriculture
+    {"name": "Agribusiness 30", "id": 658, "category": "PAA: Agriculture", "modular": True},
+    {"name": "Agricultural Equipment Technician 20, 30", "id": 660, "category": "PAA: Agriculture", "modular": True},
+    {"name": "Agriculture Production A10, B10, A20, B20, A30, B30", "id": 691, "category": "PAA: Agriculture", "modular": True},
+    {"name": "Agriculture and Sustainable Food Systems 20, 30", "id": 653, "category": "PAA: Agriculture", "modular": True},
+    {"name": "Food Studies 10, 20, 30", "id": 668, "category": "PAA: Agriculture", "modular": True},
+    # Practical & Applied Arts — Business and Management
+    {"name": "Accounting 10, 20, 30", "id": 526, "category": "PAA: Business and Management", "modular": True},
+    {"name": "Entrepreneurship 20, 30", "id": 659, "category": "PAA: Business and Management", "modular": True},
+    {"name": "Marketing 20", "id": 560, "category": "PAA: Business and Management", "modular": True},
+    # Practical & Applied Arts — Career and Life Management
+    {"name": "Career and Work Exploration 10, 20, A30, B30", "id": 525, "category": "PAA: Career and Life Management", "modular": True},
+    {"name": "Financial Literacy 20, 30", "id": 488, "category": "PAA: Career and Life Management", "modular": True},
+    {"name": "Life Transitions 20, 30", "id": 569, "category": "PAA: Career and Life Management", "modular": True},
+    # Practical & Applied Arts — Communication, Media and Design
+    {"name": "Clothing, Textiles and Fashion 10, 20, 30", "id": 571, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Communication Media 10, 20, 30", "id": 113, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Design Studies 10, 20, 30", "id": 686, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Drafting and Computer-Aided Design 10, 20, 30", "id": 527, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Graphic Arts 20, 30", "id": 129, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Information Processing 10, 20, 30", "id": 535, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Interior Design and Decorating 30", "id": 568, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Photography 10, 20, 30", "id": 137, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Robotics and Automation 10, 20, 30", "id": 461, "category": "PAA: Communication, Media and Design", "modular": True},
+    {"name": "Theatre Arts 20, 30", "id": 580, "category": "PAA: Communication, Media and Design", "modular": True},
+    # Practical & Applied Arts — Construction, Manufacturing and Transportation
+    {"name": "Autobody 10, A20, B20, A30, B30", "id": 538, "category": "PAA: Construction, Manufacturing and Transportation", "modular": True},
+    {"name": "Construction and Carpentry 10, 20, 30", "id": 114, "category": "PAA: Construction, Manufacturing and Transportation", "modular": True},
+    {"name": "Electrical and Electronics 10, Electrical 20, 30, Electronics 20, A30, B30", "id": 552, "category": "PAA: Construction, Manufacturing and Transportation", "modular": True},
+    {"name": "Machining 10, 20, 30", "id": 741, "category": "PAA: Construction, Manufacturing and Transportation", "modular": True},
+    {"name": "Mechanical and Automotive 10, A20, B20, A30, B30", "id": 543, "category": "PAA: Construction, Manufacturing and Transportation", "modular": True},
+    {"name": "Welding 10, 20, A30, B30", "id": 143, "category": "PAA: Construction, Manufacturing and Transportation", "modular": True},
+    # Practical & Applied Arts — Health Care, Hospitality and Human Services
+    {"name": "Early Learning, Supportive Care 20, 30", "id": 732, "category": "PAA: Health Care, Hospitality and Human Services", "modular": True},
+    {"name": "Commercial Cooking 10, 20, 30", "id": 524, "category": "PAA: Health Care, Hospitality and Human Services", "modular": True},
+    {"name": "Emergency Services 20, 30", "id": 744, "category": "PAA: Health Care, Hospitality and Human Services", "modular": True},
+    {"name": "Hairstyling and Esthetics 10, 20, 30", "id": 581, "category": "PAA: Health Care, Hospitality and Human Services", "modular": True},
+    {"name": "Tourism 10, 20, 30", "id": 565, "category": "PAA: Health Care, Hospitality and Human Services", "modular": True},
+    # Practical & Applied Arts — Resource Management
+    {"name": "Energy and Mines 10, 20, 30", "id": 717, "category": "PAA: Resource Management", "modular": True},
+    {"name": "Forestry Studies 20, 30", "id": 721, "category": "PAA: Resource Management", "modular": True},
+    {"name": "Wildlife and Habitat Studies 10, 20, 30", "id": 723, "category": "PAA: Resource Management", "modular": True},
 ]
 
 BASE_URL = "https://curriculum.gov.sk.ca"
