@@ -284,12 +284,20 @@ def extract_subject_base_name(curriculum_name: str) -> str:
          'Biology 30' -> 'Biology'
          'Instrumental Jazz 10' -> 'Instrumental Jazz'
          'History 30: Canadian Studies' -> 'History: Canadian Studies'
+         'Accounting 10, 20, 30' -> 'Accounting'
+         'Agriculture Production A10, B10, A20, B20, A30, B30' -> 'Agriculture Production'
+         'Autobody 10, A20, B20, A30, B30' -> 'Autobody'
+         'Electrical and Electronics 10, Electrical 20, 30, Electronics 20, A30, B30'
+            -> 'Electrical and Electronics'
     """
     name = re.sub(r"\s*\(.*?\)\s*$", "", curriculum_name)
-    # Remove level numbers (10, 20, 30) whether at end or before a colon suffix
-    name = re.sub(r"\s+\d{1,2}(?:\s*,\s*\d{1,2})*(?=\s*:|$)", "", name)
-    # Clean up any resulting double spaces or leading colons
-    name = re.sub(r"\s+", " ", name).strip()
+    # Handle complex PAA names with sub-disciplines (e.g., "Electrical and Electronics 10, Electrical 20, 30, Electronics 20, A30, B30")
+    # Remove everything from the first level number onwards
+    name = re.sub(r"[\s,]+[AB]?\d{1,2}(?:[\s,]+(?:[A-Za-z]+\s+)?[AB]?\d{1,2})*\s*$", "", name)
+    # Handle "History 30: Canadian Studies" — level before a colon
+    name = re.sub(r"\s+\d{1,2}(?=\s*:)", "", name)
+    # Clean up any resulting double spaces or trailing commas/spaces
+    name = re.sub(r"\s+", " ", name).strip().rstrip(",")
     return name
 
 
@@ -365,7 +373,7 @@ async def scrape_curriculum(
         await asyncio.sleep(0.1)
 
     if modular:
-        levels = {"Outcomes": detailed_outcomes}
+        levels = _split_modular_by_name(detailed_outcomes, curriculum_name)
     else:
         levels = organize_by_level(detailed_outcomes, curriculum_name)
     base_name = extract_subject_base_name(curriculum_name)
@@ -398,6 +406,25 @@ async def scrape_curriculum(
         per_level_results.append(result)
 
     return per_level_results
+
+
+def _split_modular_by_name(
+    outcomes: list[dict[str, Any]], curriculum_name: str
+) -> dict[str, list[dict[str, Any]]]:
+    """Split modular (PAA) outcomes into per-level buckets based on the curriculum name.
+
+    PAA modules are shared across all levels, so each level gets a copy of all outcomes.
+    Levels are extracted from the name (e.g., '10, 20, 30' or 'A10, B10, A20, B20').
+    """
+    level_matches = re.findall(r"[AB]?(\d{2})", curriculum_name)
+    unique_levels = sorted(set(lv for lv in level_matches if lv in ("10", "20", "30")))
+
+    if len(unique_levels) <= 1:
+        level = unique_levels[0] if unique_levels else ""
+        label = f"Level {level}" if level else "Outcomes"
+        return {label: outcomes}
+
+    return {f"Level {lv}": outcomes for lv in unique_levels}
 
 
 def _filename_for_subject(subject_name: str) -> str:
