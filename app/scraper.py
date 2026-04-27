@@ -373,7 +373,8 @@ async def scrape_curriculum(
         await asyncio.sleep(0.1)
 
     if modular:
-        levels = _split_modular_by_name(detailed_outcomes, curriculum_name)
+        label = _modular_level_label(curriculum_name)
+        levels = {label: detailed_outcomes}
     else:
         levels = organize_by_level(detailed_outcomes, curriculum_name)
     base_name = extract_subject_base_name(curriculum_name)
@@ -392,7 +393,9 @@ async def scrape_curriculum(
             level_outcomes.append(outcome_entry)
 
         level_num = level_label.replace("Level ", "") if level_label.startswith("Level ") else ""
-        if level_num:
+        if modular:
+            file_subject_name = base_name
+        elif level_num:
             file_subject_name = f"{base_name} {level_num}"
         else:
             file_subject_name = curriculum_name
@@ -408,23 +411,18 @@ async def scrape_curriculum(
     return per_level_results
 
 
-def _split_modular_by_name(
-    outcomes: list[dict[str, Any]], curriculum_name: str
-) -> dict[str, list[dict[str, Any]]]:
-    """Split modular (PAA) outcomes into per-level buckets based on the curriculum name.
+def _modular_level_label(curriculum_name: str) -> str:
+    """Build a combined level label for modular (PAA) curricula from the curriculum name.
 
-    PAA modules are shared across all levels, so each level gets a copy of all outcomes.
-    Levels are extracted from the name (e.g., '10, 20, 30' or 'A10, B10, A20, B20').
+    e.g. 'Accounting 10, 20, 30' -> 'Level 10, 20, 30'
+         'Agribusiness 30' -> 'Level 30'
+         'Agriculture Production A10, B10, A20, B20, A30, B30' -> 'Level 10, 20, 30'
     """
     level_matches = re.findall(r"[AB]?(\d{2})", curriculum_name)
     unique_levels = sorted(set(lv for lv in level_matches if lv in ("10", "20", "30")))
-
-    if len(unique_levels) <= 1:
-        level = unique_levels[0] if unique_levels else ""
-        label = f"Level {level}" if level else "Outcomes"
-        return {label: outcomes}
-
-    return {f"Level {lv}": outcomes for lv in unique_levels}
+    if unique_levels:
+        return "Level " + ", ".join(unique_levels)
+    return "Outcomes"
 
 
 def _filename_for_subject(subject_name: str) -> str:
