@@ -185,8 +185,29 @@ def parse_outcome_detail_full(html: str) -> dict[str, Any]:
     """Parse an outcome detail page to extract title and indicators with sub-headings."""
     soup = BeautifulSoup(html, "html.parser")
 
-    title_div = soup.find("div", class_="outcome_content_text")
-    title = clean_text(title_div.get_text()) if title_div else ""
+    # PAA module pages have a different structure: the actual outcome title is
+    # inside outcome_content_child_list after the "Outcome" header, not in
+    # outcome_content_text (which contains the module name + metadata).
+    title = ""
+    module_name_div = soup.find("div", class_="outcome_content_module_name")
+    if module_name_div:
+        child_list_div = soup.find("div", class_="outcome_content_child_list")
+        if child_list_div:
+            for child in child_list_div.children:
+                if not hasattr(child, "get"):
+                    continue
+                cls = " ".join(child.get("class") or [])
+                if "outcome_content_child_list_header" in cls:
+                    if clean_text(child.get_text()).lower() == "outcome":
+                        continue
+                    break
+                text = clean_text(child.get_text())
+                if text:
+                    title = text
+                    break
+    if not title:
+        title_div = soup.find("div", class_="outcome_content_text")
+        title = clean_text(title_div.get_text()) if title_div else ""
 
     code_div = soup.find("div", class_="outcome_content_identifier")
     if not code_div:
@@ -513,13 +534,14 @@ def _should_skip(
     """Check if a curriculum's output files already exist."""
     is_modular = curr.get("modular", False)
     if is_modular:
-        filename = _filename_for_subject(curriculum_name)
+        base_name = extract_subject_base_name(curriculum_name)
+        filename = _filename_for_subject(base_name)
         return filename in existing_files
 
     base_name = extract_subject_base_name(curriculum_name)
     level_matches = re.findall(r"\b(10|20|30)\b", curriculum_name)
     if len(level_matches) <= 1:
-        filename = _filename_for_subject(curriculum_name)
+        filename = _filename_for_subject(f"{base_name} {level_matches[0]}" if level_matches else curriculum_name)
         return filename in existing_files
 
     return all(
