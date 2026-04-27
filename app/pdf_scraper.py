@@ -234,34 +234,34 @@ async def scrape_bal_and_ccc(
                 pdf_bytes = resp.content
 
                 doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                try:
+                    # Parse BAL
+                    bal = parse_broad_areas_of_learning(doc)
+                    if bal:
+                        bal_data = {"Broad Areas Of Learning": bal}
+                        bal_filename = f"broad_areas_of_learning_{base_name}.json"
+                        bal_path = OUTPUT_DIR / bal_filename
+                        with open(bal_path, "w", encoding="utf-8") as f:
+                            json.dump(bal_data, f, indent=4, ensure_ascii=False)
+                        results["bal"].append(bal_filename)
+                        logger.info(f"Saved BAL: {bal_path}")
 
-                # Parse BAL
-                bal = parse_broad_areas_of_learning(doc)
-                if bal:
-                    bal_data = {"Broad Areas Of Learning": bal}
-                    bal_filename = f"broad_areas_of_learning_{base_name}.json"
-                    bal_path = OUTPUT_DIR / bal_filename
-                    with open(bal_path, "w", encoding="utf-8") as f:
-                        json.dump(bal_data, f, indent=4, ensure_ascii=False)
-                    results["bal"].append(bal_filename)
-                    logger.info(f"Saved BAL: {bal_path}")
+                    # Parse CCC
+                    ccc = parse_cross_curricular_competencies(doc)
+                    if ccc:
+                        ccc_data = {"cross_curricular_competencies": ccc}
+                        ccc_filename = f"cross_curricular_competencies_{base_name}.json"
+                        ccc_path = OUTPUT_DIR / ccc_filename
+                        with open(ccc_path, "w", encoding="utf-8") as f:
+                            json.dump(ccc_data, f, indent=4, ensure_ascii=False)
+                        results["ccc"].append(ccc_filename)
+                        logger.info(f"Saved CCC: {ccc_path}")
 
-                # Parse CCC
-                ccc = parse_cross_curricular_competencies(doc)
-                if ccc:
-                    ccc_data = {"cross_curricular_competencies": ccc}
-                    ccc_filename = f"cross_curricular_competencies_{base_name}.json"
-                    ccc_path = OUTPUT_DIR / ccc_filename
-                    with open(ccc_path, "w", encoding="utf-8") as f:
-                        json.dump(ccc_data, f, indent=4, ensure_ascii=False)
-                    results["ccc"].append(ccc_filename)
-                    logger.info(f"Saved CCC: {ccc_path}")
-
-                if not bal and not ccc:
-                    results["skipped"].append(f"{base_name} (id={cid}): no BAL/CCC content found in PDF")
-                    logger.warning(f"No BAL/CCC found in PDF for {base_name}")
-
-                doc.close()
+                    if not bal and not ccc:
+                        results["skipped"].append(f"{base_name} (id={cid}): no BAL/CCC content found in PDF")
+                        logger.warning(f"No BAL/CCC found in PDF for {base_name}")
+                finally:
+                    doc.close()
 
             except Exception as e:
                 logger.error(f"Failed to process PDF for {base_name} (id={cid}): {e}")

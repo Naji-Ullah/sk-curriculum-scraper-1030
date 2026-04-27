@@ -317,7 +317,7 @@ HTML_PAGE = """<!DOCTYPE html>
         function disableAllBtns() {
             ['startBtn','startNewBtn','startCFK9Btn','startBALBtn'].forEach(id => {
                 const b = document.getElementById(id);
-                if (b) { b.disabled = true; b.dataset.origText = b.textContent; b.textContent = 'Scraping...'; }
+                if (b) { b.disabled = true; if (!b.dataset.origText) b.dataset.origText = b.textContent; b.textContent = 'Scraping...'; }
             });
         }
 
